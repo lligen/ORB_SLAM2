@@ -96,6 +96,11 @@ public:
     Frame mCurrentFrame;
     cv::Mat mImGray;
 
+    //ellipse information lligen added
+    vector<cv::Point2d> ellipse_center;
+    vector<cv::Size2f> axis;//major_axis. minor_axis.
+    vector<float> angle;
+
     // Initialization Variables (Monocular)
     std::vector<int> mvIniLastMatches;
     std::vector<int> mvIniMatches;
@@ -119,6 +124,9 @@ protected:
 
     // Main tracking function. It is independent of the input sensor.
     void Track();
+    // compute inlier distribution. lligen added
+    float computeInlierDistri(Frame *pFrame);//return score
+    float computeInlierDistri(Frame *pFrame, vector<size_t>& vnIndexInlier);//return score
 
     // Map initialization for stereo and RGB-D
     void StereoInitialization();

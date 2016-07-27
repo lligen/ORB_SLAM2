@@ -43,7 +43,8 @@ public:
     void static GlobalBundleAdjustemnt(Map* pMap, int nIterations=5, bool *pbStopFlag=NULL,
                                        const unsigned long nLoopKF=0, const bool bRobust = true);
     void static LocalBundleAdjustment(KeyFrame* pKF, bool *pbStopFlag, Map *pMap);
-    int static PoseOptimization(Frame* pFrame);
+    int static PoseOptimization(Frame* pFrame, int numIter, cv::Mat& updatedPose, const bool bUpdatePose = true);
+    int static PoseOptimizationThroughOutliers(Frame* pFrame, int numIter, cv::Mat& updatedPose, vector<size_t>& vnIndexInlier);
 
     // if bFixScale is true, 6DoF optimization (stereo,rgbd), 7DoF otherwise (mono)
     void static OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* pCurKF,

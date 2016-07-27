@@ -52,6 +52,11 @@ protected:
 
     void DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText);
 
+    //ellipse information lligen added
+    vector<cv::Point2d> mEllipseCenter;
+    vector<cv::Size2f> mAxis;//major_axis. minor_axis.
+    vector<float> mAngle;
+
     // Info of the frame to be drawn
     cv::Mat mIm;
     int N;

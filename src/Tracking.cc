@@ -24,6 +24,9 @@
 #include<opencv2/core/core.hpp>
 #include<opencv2/features2d/features2d.hpp>
 
+#include <Eigen/SVD>
+#include <Eigen/LU>
+
 #include"ORBmatcher.h"
 #include"FrameDrawer.h"
 #include"Converter.h"
@@ -48,6 +51,11 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
     mpKeyFrameDB(pKFDB), mpInitializer(static_cast<Initializer*>(NULL)), mpSystem(pSys),
     mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpMap(pMap), mnLastRelocFrameId(0)
 {
+    //ellipse information initialization lligen added
+    ellipse_center.reserve(3);
+    axis.reserve(3);//major_axis. minor_axis.
+    angle.reserve(3);
+
     // Load camera parameters from settings file
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
@@ -506,6 +514,7 @@ void Tracking::Track()
 }
 
 
+
 void Tracking::StereoInitialization()
 {
     if(mCurrentFrame.N>500)
@@ -772,7 +781,9 @@ bool Tracking::TrackReferenceKeyFrame()
     mCurrentFrame.mvpMapPoints = vpMapPointMatches;
     mCurrentFrame.SetPose(mLastFrame.mTcw);
 
-    Optimizer::PoseOptimization(&mCurrentFrame);
+    cout << "TrackReferenceKeyFrame..."<< endl;
+    cv::Mat updatedPose;
+    Optimizer::PoseOptimization(&mCurrentFrame, 4,updatedPose, true);
 
     // Discard outliers
     int nmatchesMap = 0;
@@ -864,6 +875,124 @@ void Tracking::UpdateLastFrame()
     }
 }
 
+float Tracking::computeInlierDistri(Frame *pFrame)
+{
+    float score=0;
+    Eigen::Matrix<double,2,1> InlierLocMean;
+    InlierLocMean.setZero();
+    int numInlier=0;
+    for(int i=0; i<pFrame->N; i++)
+    {
+        MapPoint* pMP = pFrame->mvpMapPoints[i];
+        if(pMP && pFrame->mvbOutlier[i] == false)
+        {
+            const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];
+            InlierLocMean[0] += kpUn.pt.x;
+            InlierLocMean[1] += kpUn.pt.y;
+            numInlier++;
+
+        }
+    }
+    if(numInlier < 10)
+    {
+        cout << "Seems no dynamic object."<< endl;
+        return score;
+    }
+    InlierLocMean /= numInlier;
+    ellipse_center.push_back(cv::Point2d(InlierLocMean[0],InlierLocMean[1]));
+    Eigen::Matrix<double,2,2> InlierCov;
+    InlierCov.setZero();
+    for(int i=0; i<pFrame->N; i++)
+    {
+        MapPoint* pMP = pFrame->mvpMapPoints[i];
+        if(pMP && pFrame->mvbOutlier[i] == false)
+        {
+            Eigen::Matrix<double,2,1> InlierLoc;
+            const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];
+            InlierLoc[0] = kpUn.pt.x - InlierLocMean[0];
+            InlierLoc[1] = kpUn.pt.y - InlierLocMean[1];
+
+            InlierCov += InlierLoc *InlierLoc.transpose();
+        }
+    }
+    InlierCov /= numInlier-1;
+
+    Eigen::JacobiSVD<Eigen::Matrix<double,2,2>> svd(InlierCov, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    cout << "singular values are:" << endl << svd.singularValues() << endl;
+    cout << "left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+    cout << "right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+    Eigen::Matrix<double,2,1> singular;singular<<svd.singularValues().head(2);
+    Eigen::Matrix<double,2,1> majorV;majorV = svd.matrixV().col(0);
+    axis.push_back(cv::Size2f(sqrt(singular[0]),sqrt(singular[1])));
+    angle.push_back(CV_PI*atan2(majorV(1),majorV(0)));//JIAODU
+
+    score = CV_PI*sqrt(InlierCov.determinant())/(pFrame->mnMaxX*pFrame->mnMaxY);//octave size
+    cout<<"score for feature's octave: "<<score<<endl;
+    cout<<"numInlier: "<<numInlier<<endl;
+
+    return score;
+}
+
+float Tracking::computeInlierDistri(Frame *pFrame, vector<size_t>& vnIndexInlier)
+{
+    float score=0;
+    Eigen::Matrix<double,2,1> InlierLocMean;
+    InlierLocMean.setZero();
+    int numInlier=0;
+    for(int i=0; i<vnIndexInlier.size(); i++)
+    {
+        const size_t & idx =vnIndexInlier[i];
+        MapPoint* pMP = pFrame->mvpMapPoints[idx];
+        if(pMP && pFrame->mvbOutlier[idx] == false)
+        {
+            const cv::KeyPoint &kpUn = pFrame->mvKeysUn[idx];
+            InlierLocMean[0] += kpUn.pt.x;
+            InlierLocMean[1] += kpUn.pt.y;
+            numInlier++;
+
+        }
+    }
+    if(numInlier < 10)
+    {
+        cout << "Seems no dynamic object."<< endl;
+        return score;
+    }
+    InlierLocMean /= numInlier;
+    ellipse_center.push_back(cv::Point2d(InlierLocMean[0],InlierLocMean[1]));
+    Eigen::Matrix<double,2,2> InlierCov;
+    InlierCov.setZero();
+    for(int i=0; i<vnIndexInlier.size(); i++)
+    {
+        const size_t & idx =vnIndexInlier[i];
+        MapPoint* pMP = pFrame->mvpMapPoints[idx];
+        if(pMP && pFrame->mvbOutlier[idx] == false)
+        {
+            Eigen::Matrix<double,2,1> InlierLoc;
+            const cv::KeyPoint &kpUn = pFrame->mvKeysUn[idx];
+            InlierLoc[0] = kpUn.pt.x - InlierLocMean[0];
+            InlierLoc[1] = kpUn.pt.y - InlierLocMean[1];
+
+            InlierCov += InlierLoc *InlierLoc.transpose();
+        }
+    }
+    InlierCov /= numInlier-1;
+
+    Eigen::JacobiSVD<Eigen::Matrix<double,2,2>> svd(InlierCov, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    cout << "singular values are:" << endl << svd.singularValues() << endl;
+    cout << "left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+    cout << "right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+    Eigen::Matrix<double,2,1> singular;singular<<svd.singularValues().head(2);
+    Eigen::Matrix<double,2,1> majorV;majorV = svd.matrixV().col(0);
+    axis.push_back(cv::Size2f(sqrt(singular[0]),sqrt(singular[1])));
+    angle.push_back(CV_PI*atan2(majorV(1),majorV(0)));//JIAODU
+
+    score = CV_PI*sqrt(InlierCov.determinant())/(pFrame->mnMaxX*pFrame->mnMaxY);//octave size
+    cout<<"score for feature's octave: "<<score<<endl;
+    cout<<"numInlier: "<<numInlier<<endl;
+
+    return score;
+}
+
 bool Tracking::TrackWithMotionModel()
 {
     ORBmatcher matcher(0.9,true);
@@ -883,7 +1012,6 @@ bool Tracking::TrackWithMotionModel()
     else
         th=7;
     int nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,th,mSensor==System::MONOCULAR);
-
     // If few matches, uses a wider window search
     if(nmatches<20)
     {
@@ -894,8 +1022,61 @@ bool Tracking::TrackWithMotionModel()
     if(nmatches<20)
         return false;
 
+    //lligen added
+    /// previous \SearchByProjection get feature correspondence,
+    /// would include dynamic moving mappoint(tracking accuracy) and
+    /// exclude occlusion point(keyframe).
+    /// we need to take into account not only the number but also
+    /// the distritution of inliers
+    /// hypothesis evaluation
+    ellipse_center.clear();
+    axis.clear();//major_axis. minor_axis.
+    angle.clear();
+
+    {
+        Frame curFrame = mCurrentFrame;
+        cv::Mat updatedPose,updatedPose2;
+        int numIter=2;
+        int nGood =Optimizer::PoseOptimization(&curFrame, numIter, updatedPose, false);
+    //  cout << "PoseOptimization...  nGood: "<<nGood<< endl;
+        //compute inlier distribution
+        float score = computeInlierDistri(&curFrame);
+        Frame curFrame_tmp1 = curFrame;
+
+        float score2=0;
+        vector<size_t> vnIndexInlier;
+        int nInGood = Optimizer::PoseOptimizationThroughOutliers(&curFrame, numIter, updatedPose2, vnIndexInlier);
+        if( nInGood > 7)
+        {
+            score2 = computeInlierDistri(&curFrame, vnIndexInlier);
+            cout<<"~~~~score 1 = "<<score<<", score 2 = "<<score2<<endl;
+//            if(score2 < 0.1)
+//            {
+//               cout<<"~~~~note: There maybe Exist dynamic object!!"<<endl;
+//
+//            }
+
+        }
+        if(score >= score2)
+        {
+            mCurrentFrame = curFrame_tmp1;
+            mCurrentFrame.SetPose(updatedPose);
+        }
+        else
+        {
+            mCurrentFrame = curFrame;
+            mCurrentFrame.SetPose(updatedPose2);
+        }
+    }
+
+    //lligen added ended
+
+
     // Optimize frame pose with all matches
-    Optimizer::PoseOptimization(&mCurrentFrame);
+    cout << "TrackWithMotionModel..."<< endl;
+    cv::Mat newUpdatePose;
+    Optimizer::PoseOptimization(&mCurrentFrame,4,newUpdatePose,true);
+    computeInlierDistri(&mCurrentFrame);
 
     // Discard outliers
     int nmatchesMap = 0;
@@ -916,7 +1097,8 @@ bool Tracking::TrackWithMotionModel()
             else if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
                 nmatchesMap++;
         }
-    }    
+    }
+
 
     if(mbOnlyTracking)
     {
@@ -937,7 +1119,9 @@ bool Tracking::TrackLocalMap()
     SearchLocalPoints();
 
     // Optimize Pose
-    Optimizer::PoseOptimization(&mCurrentFrame);
+    cout << "TrackLocalMap..."<< endl;
+    cv::Mat updatedPose;
+    Optimizer::PoseOptimization(&mCurrentFrame, 4, updatedPose, true);
     mnMatchesInliers = 0;
 
     // Update MapPoints Statistics
@@ -1450,7 +1634,8 @@ bool Tracking::Relocalization()
                         mCurrentFrame.mvpMapPoints[j]=NULL;
                 }
 
-                int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+                cv::Mat updatedPose;
+                int nGood = Optimizer::PoseOptimization(&mCurrentFrame, 4, updatedPose, true);
 
                 if(nGood<10)
                     continue;
@@ -1466,7 +1651,8 @@ bool Tracking::Relocalization()
 
                     if(nadditional+nGood>=50)
                     {
-                        nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+                        cv::Mat updatedPose;
+                        nGood = Optimizer::PoseOptimization(&mCurrentFrame, 4, updatedPose, true);
 
                         // If many inliers but still not enough, search by projection again in a narrower window
                         // the camera has been already optimized with many points
@@ -1481,7 +1667,8 @@ bool Tracking::Relocalization()
                             // Final optimization
                             if(nGood+nadditional>=50)
                             {
-                                nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+                                cv::Mat updatedPose;
+                                nGood = Optimizer::PoseOptimization(&mCurrentFrame, 4, updatedPose, true);
 
                                 for(int io =0; io<mCurrentFrame.N; io++)
                                     if(mCurrentFrame.mvbOutlier[io])

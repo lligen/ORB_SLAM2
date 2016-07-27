@@ -44,6 +44,11 @@ cv::Mat FrameDrawer::DrawFrame()
     vector<bool> vbVO, vbMap; // Tracked MapPoints in current frame
     int state; // Tracking state
 
+    //ellipse information lligen added
+    vector<cv::Point2d> ellipse_center;
+    vector<cv::Size2f> axis;//major_axis. minor_axis.
+    vector<float> angle;
+
     //Copy variables within scoped mutex
     {
         unique_lock<mutex> lock(mMutex);
@@ -64,6 +69,11 @@ cv::Mat FrameDrawer::DrawFrame()
             vCurrentKeys = mvCurrentKeys;
             vbVO = mvbVO;
             vbMap = mvbMap;
+
+            ellipse_center = mEllipseCenter;
+            axis = mAxis;
+            angle = mAngle;
+
         }
         else if(mState==Tracking::LOST)
         {
@@ -88,6 +98,16 @@ cv::Mat FrameDrawer::DrawFrame()
     }
     else if(state==Tracking::OK) //TRACKING
     {
+        if( !ellipse_center.empty())
+        {
+            for(int i=0;i<ellipse_center.size();i++)
+            {
+                cv::circle(im,ellipse_center[i],2,cv::Scalar(255,0,0),-1);
+                cv::ellipse(im,ellipse_center[i],axis[i],angle[i],0, 360, cv::Scalar( 255, 0,0), 2, 8);
+
+            }
+        }
+
         mnTracked=0;
         mnTrackedVO=0;
         const float r = 5;
@@ -172,6 +192,11 @@ void FrameDrawer::Update(Tracking *pTracker)
     mvbVO = vector<bool>(N,false);
     mvbMap = vector<bool>(N,false);
     mbOnlyTracking = pTracker->mbOnlyTracking;
+
+    //ellipse information lligen added
+    mEllipseCenter = pTracker->ellipse_center;
+    mAxis = pTracker->axis; //major_axis. minor_axis.
+    mAngle = pTracker->angle;
 
 
     if(pTracker->mLastProcessedState==Tracking::NOT_INITIALIZED)
