@@ -1,0 +1,8 @@
+
+<launch>
+  <node name="Mono_SLAM" pkg="ORB_SLAM2" type="Mono" output="screen" args="/home/lligen/cmake/ORB_SLAM2/Vocabulary/ORBvoc.txt /home/lligen/cmake/ORB_SLAM2/Examples/ROS/ORB_SLAM2/mono.yaml">
+  
+	<remap from="/camera/image_raw"         to="/camera/rgb/image_color"/>
+
+  </node>
+</launch>
