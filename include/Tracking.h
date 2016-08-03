@@ -136,6 +136,7 @@ protected:
     void CreateInitialMapMonocular();
 
     void CheckReplacedInLastFrame();
+    bool TrackReferenceKeyFrameWithRansac();//lligen added
     bool TrackReferenceKeyFrame();
     void UpdateLastFrame();
     bool TrackWithMotionModel();

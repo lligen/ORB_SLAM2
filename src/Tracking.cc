@@ -322,6 +322,9 @@ void Tracking::Track()
                     if(!bOK)
                         bOK = TrackReferenceKeyFrame();
                 }
+
+
+//                bOK = TrackReferenceKeyFrameWithRansac();
             }
             else
             {
@@ -762,6 +765,151 @@ void Tracking::CheckReplacedInLastFrame()
     }
 }
 
+bool Tracking::TrackReferenceKeyFrameWithRansac()
+{
+    cout<<"TrackReferenceKeyFrameWithRansac..."<<endl;
+    // Compute Bag of Words Vector
+    mCurrentFrame.ComputeBoW();
+
+    // We perform first an ORB matching with each candidate
+    // If enough matches are found we setup a PnP solver
+    ORBmatcher matcher(0.75,true);
+    vector<MapPoint*> vpMapPointMatches;
+
+    int nmatches = matcher.SearchByBoW(mpReferenceKF,mCurrentFrame,vpMapPointMatches);
+    cout<<"SearchByBoW...git init matches="<<nmatches<<endl;
+
+    bool bMatch = false;
+    if(nmatches<15)
+        return false;
+
+    PnPsolver* pSolver = new PnPsolver(mCurrentFrame,vpMapPointMatches);
+    pSolver->SetRansacParameters(0.99,10,300,4,0.5,5.991);
+
+    // Alternatively perform some iterations of P4P RANSAC
+    // Until we found a camera pose supported by enough inliers
+
+    ORBmatcher matcher2(0.9,true);
+
+    // Perform 5 Ransac Iterations
+    vector<bool> vbInliers;
+    int nInliers;
+    bool bNoMore;
+
+    cv::Mat Tcw = pSolver->iterate(25,bNoMore,vbInliers,nInliers);
+    cout<<"PnPsolver...inliers = "<<nInliers<<endl;
+
+    // If Ransac reachs max. iterations discard keyframe
+    if(bNoMore)
+        return false;
+
+    // If a Camera Pose is computed, optimize
+    if(!Tcw.empty())
+    {
+        Tcw.copyTo(mCurrentFrame.mTcw);
+
+        set<MapPoint*> sFound;
+
+        const int np = vbInliers.size();
+
+        for(int j=0; j<np; j++)
+        {
+            if(vbInliers[j])
+            {
+                mCurrentFrame.mvpMapPoints[j]=vpMapPointMatches[j];
+                sFound.insert(vpMapPointMatches[j]);
+            }
+            else
+                mCurrentFrame.mvpMapPoints[j]=NULL;
+        }
+
+        cv::Mat updatedPose;
+        int nGood = Optimizer::PoseOptimization(&mCurrentFrame, 4, updatedPose, true);
+
+        if(nGood<10)
+            return false;
+
+        for(int io =0; io<mCurrentFrame.N; io++)
+            if(mCurrentFrame.mvbOutlier[io])
+                mCurrentFrame.mvpMapPoints[io]=static_cast<MapPoint*>(NULL);
+
+        // If few inliers, search by projection in a coarse window and optimize again
+        if(nGood<50)
+        {
+            int nadditional =matcher2.SearchByProjection(mCurrentFrame,mpReferenceKF,sFound,10,100);
+
+            if(nadditional+nGood>=50)
+            {
+                cv::Mat updatedPose;
+                nGood = Optimizer::PoseOptimization(&mCurrentFrame, 4, updatedPose, true);
+
+                // If many inliers but still not enough, search by projection again in a narrower window
+                // the camera has been already optimized with many points
+                if(nGood>30 && nGood<50)
+                {
+                    sFound.clear();
+                    for(int ip =0; ip<mCurrentFrame.N; ip++)
+                        if(mCurrentFrame.mvpMapPoints[ip])
+                            sFound.insert(mCurrentFrame.mvpMapPoints[ip]);
+                    nadditional =matcher2.SearchByProjection(mCurrentFrame,mpReferenceKF,sFound,3,64);
+
+                    // Final optimization
+                    if(nGood+nadditional>=50)
+                    {
+                        cv::Mat updatedPose;
+                        nGood = Optimizer::PoseOptimization(&mCurrentFrame, 4, updatedPose, true);
+
+                        for(int io =0; io<mCurrentFrame.N; io++)
+                            if(mCurrentFrame.mvbOutlier[io])
+                                mCurrentFrame.mvpMapPoints[io]=NULL;
+                    }
+                }
+            }
+        }
+
+
+        // If the pose is supported by enough inliers stop ransacs and continue
+        if(nGood>=50)
+        {
+            bMatch = true;
+        }
+    }
+
+
+
+    if(!bMatch)
+    {
+        return false;
+    }
+    else
+    {
+        // Discard outliers
+        int nmatchesMap = 0;
+        for(int i =0; i<mCurrentFrame.N; i++)
+        {
+            if(mCurrentFrame.mvpMapPoints[i])
+            {
+                if(mCurrentFrame.mvbOutlier[i])
+                {
+                    MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
+
+                    mCurrentFrame.mvpMapPoints[i]=static_cast<MapPoint*>(NULL);
+                    mCurrentFrame.mvbOutlier[i]=false;
+                    pMP->mbTrackInView = false;
+                    pMP->mnLastFrameSeen = mCurrentFrame.mnId;
+                    nmatches--;
+                }
+                else if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
+                    nmatchesMap++;
+            }
+        }
+
+
+        mnLastRelocFrameId = mCurrentFrame.mnId;
+        return true;
+    }
+
+}
 
 bool Tracking::TrackReferenceKeyFrame()
 {
@@ -1023,51 +1171,51 @@ bool Tracking::TrackWithMotionModel()
         return false;
 
     //lligen added
-    /// previous \SearchByProjection get feature correspondence,
-    /// would include dynamic moving mappoint(tracking accuracy) and
-    /// exclude occlusion point(keyframe).
-    /// we need to take into account not only the number but also
-    /// the distritution of inliers
-    /// hypothesis evaluation
-    ellipse_center.clear();
-    axis.clear();//major_axis. minor_axis.
-    angle.clear();
+//    /// previous \SearchByProjection get feature correspondence,
+//    /// would include dynamic moving mappoint(tracking accuracy) and
+//    /// exclude occlusion point(keyframe).
+//    /// we need to take into account not only the number but also
+//    /// the distritution of inliers
+//    /// hypothesis evaluation
+//    ellipse_center.clear();
+//    axis.clear();//major_axis. minor_axis.
+//    angle.clear();
 
-    {
-        Frame curFrame = mCurrentFrame;
-        cv::Mat updatedPose,updatedPose2;
-        int numIter=2;
-        int nGood =Optimizer::PoseOptimization(&curFrame, numIter, updatedPose, false);
-    //  cout << "PoseOptimization...  nGood: "<<nGood<< endl;
-        //compute inlier distribution
-        float score = computeInlierDistri(&curFrame);
-        Frame curFrame_tmp1 = curFrame;
+//    {
+//        Frame curFrame = mCurrentFrame;
+//        cv::Mat updatedPose,updatedPose2;
+//        int numIter=2;
+//        int nGood =Optimizer::PoseOptimization(&curFrame, numIter, updatedPose, false);
+//    //  cout << "PoseOptimization...  nGood: "<<nGood<< endl;
+//        //compute inlier distribution
+//        float score = computeInlierDistri(&curFrame);
+//        Frame curFrame_tmp1 = curFrame;
 
-        float score2=0;
-        vector<size_t> vnIndexInlier;
-        int nInGood = Optimizer::PoseOptimizationThroughOutliers(&curFrame, numIter, updatedPose2, vnIndexInlier);
-        if( nInGood > 7)
-        {
-            score2 = computeInlierDistri(&curFrame, vnIndexInlier);
-            cout<<"~~~~score 1 = "<<score<<", score 2 = "<<score2<<endl;
-//            if(score2 < 0.1)
-//            {
-//               cout<<"~~~~note: There maybe Exist dynamic object!!"<<endl;
-//
-//            }
+//        float score2=0;
+//        vector<size_t> vnIndexInlier;
+//        int nInGood = Optimizer::PoseOptimizationThroughOutliers(&curFrame, numIter, updatedPose2, vnIndexInlier);
+//        if( nInGood > 7)
+//        {
+//            score2 = computeInlierDistri(&curFrame, vnIndexInlier);
+//            cout<<"~~~~score 1 = "<<score<<", score 2 = "<<score2<<endl;
+////            if(score2 < 0.1)
+////            {
+////               cout<<"~~~~note: There maybe Exist dynamic object!!"<<endl;
+////
+////            }
 
-        }
-        if(score >= score2)
-        {
-            mCurrentFrame = curFrame_tmp1;
-            mCurrentFrame.SetPose(updatedPose);
-        }
-        else
-        {
-            mCurrentFrame = curFrame;
-            mCurrentFrame.SetPose(updatedPose2);
-        }
-    }
+//        }
+//        if(score >= score2)
+//        {
+//            mCurrentFrame = curFrame_tmp1;
+//            mCurrentFrame.SetPose(updatedPose);
+//        }
+//        else
+//        {
+//            mCurrentFrame = curFrame;
+//            mCurrentFrame.SetPose(updatedPose2);
+//        }
+//    }
 
     //lligen added ended
 
