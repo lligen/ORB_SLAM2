@@ -94,12 +94,14 @@ public:
 
     // Current Frame
     Frame mCurrentFrame;
+    Frame mRefFrame;
     cv::Mat mImGray;
 
     //ellipse information lligen added
     vector<cv::Point2d> ellipse_center;
     vector<cv::Size2f> axis;//major_axis. minor_axis.
     vector<float> angle;
+    vector<cv::DMatch> matchedPairs;
 
     // Initialization Variables (Monocular)
     std::vector<int> mvIniLastMatches;

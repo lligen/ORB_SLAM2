@@ -426,6 +426,7 @@ void Tracking::Track()
             mState=LOST;
 
         // Update drawer
+        mRefFrame = mLastFrame;
         mpFrameDrawer->Update(this);
 
         // If tracking were good, check if we insert a keyframe
@@ -1153,30 +1154,33 @@ bool Tracking::TrackWithMotionModel()
 
     fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
 
+
     // Project points seen in previous frame
     int th;
     if(mSensor!=System::STEREO)
         th=15;
     else
         th=7;
-    int nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,th,mSensor==System::MONOCULAR);
+
+    int nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,th,mSensor==System::MONOCULAR, matchedPairs);
     // If few matches, uses a wider window search
     if(nmatches<20)
     {
         fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
-        nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,2*th,mSensor==System::MONOCULAR);
+        nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,2*th,mSensor==System::MONOCULAR, matchedPairs);
     }
 
     if(nmatches<20)
         return false;
 
+
     //lligen added
-//    /// previous \SearchByProjection get feature correspondence,
-//    /// would include dynamic moving mappoint(tracking accuracy) and
-//    /// exclude occlusion point(keyframe).
-//    /// we need to take into account not only the number but also
-//    /// the distritution of inliers
-//    /// hypothesis evaluation
+    /// previous \SearchByProjection get feature correspondence,
+    /// would include dynamic moving mappoint(tracking accuracy) and
+    /// exclude occlusion point(keyframe).
+    /// we need to take into account not only the number but also
+    /// the distritution of inliers
+    /// hypothesis evaluation
 //    ellipse_center.clear();
 //    axis.clear();//major_axis. minor_axis.
 //    angle.clear();
@@ -1184,7 +1188,7 @@ bool Tracking::TrackWithMotionModel()
 //    {
 //        Frame curFrame = mCurrentFrame;
 //        cv::Mat updatedPose,updatedPose2;
-//        int numIter=2;
+//        int numIter=4;
 //        int nGood =Optimizer::PoseOptimization(&curFrame, numIter, updatedPose, false);
 //    //  cout << "PoseOptimization...  nGood: "<<nGood<< endl;
 //        //compute inlier distribution
@@ -1224,7 +1228,7 @@ bool Tracking::TrackWithMotionModel()
     cout << "TrackWithMotionModel..."<< endl;
     cv::Mat newUpdatePose;
     Optimizer::PoseOptimization(&mCurrentFrame,4,newUpdatePose,true);
-    computeInlierDistri(&mCurrentFrame);
+//    computeInlierDistri(&mCurrentFrame);
 
     // Discard outliers
     int nmatchesMap = 0;
@@ -1237,7 +1241,7 @@ bool Tracking::TrackWithMotionModel()
                 MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
 
                 mCurrentFrame.mvpMapPoints[i]=static_cast<MapPoint*>(NULL);
-                mCurrentFrame.mvbOutlier[i]=false;
+//                mCurrentFrame.mvbOutlier[i]=false;
                 pMP->mbTrackInView = false;
                 pMP->mnLastFrameSeen = mCurrentFrame.mnId;
                 nmatches--;

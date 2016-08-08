@@ -1325,7 +1325,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
     return nFound;
 }
 
-int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, const float th, const bool bMono)
+int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, const float th, const bool bMono, vector<cv::DMatch>& matchedPair)
 {
     int nmatches = 0;
 
@@ -1347,6 +1347,9 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
 
     const bool bForward = tlc.at<float>(2)>CurrentFrame.mb && !bMono;
     const bool bBackward = -tlc.at<float>(2)>CurrentFrame.mb && !bMono;
+
+//    vector<cv::DMatch> matchedPair;
+    matchedPair.clear();
 
     for(int i=0; i<LastFrame.N; i++)
     {
@@ -1427,6 +1430,8 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
                 {
                     CurrentFrame.mvpMapPoints[bestIdx2]=pMP;
                     nmatches++;
+                    cv::DMatch matched(i, bestIdx2, 0.0f);
+                    matchedPair.push_back(matched);
 
                     if(mbCheckOrientation)
                     {
@@ -1461,6 +1466,15 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
                 {
                     CurrentFrame.mvpMapPoints[rotHist[i][j]]=static_cast<MapPoint*>(NULL);
                     nmatches--;
+
+                    std::vector<cv::DMatch>::iterator it=matchedPair.begin();
+                    for(;it != matchedPair.end();it++)
+                    {
+                        if(it->trainIdx==rotHist[i][j])
+                            it = matchedPair.erase(it);
+                        if( it == matchedPair.end())
+                            break;
+                    }
                 }
             }
         }

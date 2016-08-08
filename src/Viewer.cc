@@ -133,8 +133,11 @@ void Viewer::Run()
 
         pangolin::FinishFrame();
 
-        cv::Mat im = mpFrameDrawer->DrawFrame();
+        cv::Mat imgMatches;
+        cv::Mat im = mpFrameDrawer->DrawFrame(imgMatches);
         cv::imshow("ORB-SLAM2: Current Frame",im);
+        if(! imgMatches.empty())
+            cv::imshow("matched feature pairs ",imgMatches);
         cv::waitKey(mT);
 
         if(menuReset)

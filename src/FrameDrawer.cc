@@ -35,14 +35,17 @@ FrameDrawer::FrameDrawer(Map* pMap):mpMap(pMap)
     mIm = cv::Mat(480,640,CV_8UC3, cv::Scalar(0,0,0));
 }
 
-cv::Mat FrameDrawer::DrawFrame()
+cv::Mat FrameDrawer::DrawFrame(cv::Mat& imgMatches)
 {
     cv::Mat im;
     vector<cv::KeyPoint> vIniKeys; // Initialization: KeyPoints in reference frame
     vector<int> vMatches; // Initialization: correspondeces with reference keypoints
-    vector<cv::KeyPoint> vCurrentKeys; // KeyPoints in current frame
+    vector<cv::KeyPoint> vCurrentKeys,vRefKeys; // KeyPoints in current frame
     vector<bool> vbVO, vbMap; // Tracked MapPoints in current frame
+    vector<bool> vbOutlier;
     int state; // Tracking state
+
+    vector<cv::DMatch> vMatchedPairs;
 
     //ellipse information lligen added
     vector<cv::Point2d> ellipse_center;
@@ -67,8 +70,11 @@ cv::Mat FrameDrawer::DrawFrame()
         else if(mState==Tracking::OK)
         {
             vCurrentKeys = mvCurrentKeys;
+            vRefKeys = mvRefKeys;
+            vMatchedPairs = mvMatchedPairs;
             vbVO = mvbVO;
             vbMap = mvbMap;
+            vbOutlier = mvbOutlier;
 
             ellipse_center = mEllipseCenter;
             axis = mAxis;
@@ -98,29 +104,31 @@ cv::Mat FrameDrawer::DrawFrame()
     }
     else if(state==Tracking::OK) //TRACKING
     {
-        if( !ellipse_center.empty())
-        {
-            for(int i=0;i<ellipse_center.size();i++)
-            {
-                cv::circle(im,ellipse_center[i],2,cv::Scalar(255,0,0),-1);
-                cv::ellipse(im,ellipse_center[i],axis[i],angle[i],0, 360, cv::Scalar( 255, 0,0), 2, 8);
+//        if( !ellipse_center.empty())
+//        {
+//            for(int i=0;i<ellipse_center.size();i++)
+//            {
+//                cv::circle(im,ellipse_center[i],2,cv::Scalar(255,0,0),-1);
+//                cv::ellipse(im,ellipse_center[i],axis[i],angle[i],0, 360, cv::Scalar( 255, 0,0), 2, 8);
 
-            }
-        }
+//            }
+//        }
+
+        cv::Mat rgb1(480,640,CV_8UC1,cv::Scalar( 1 ));
+        cv::drawMatches( rgb1, vRefKeys, rgb1,vCurrentKeys, vMatchedPairs, imgMatches );
 
         mnTracked=0;
         mnTrackedVO=0;
         const float r = 5;
         for(int i=0;i<N;i++)
         {
+            cv::Point2f pt1,pt2;
+            pt1.x=vCurrentKeys[i].pt.x-r;
+            pt1.y=vCurrentKeys[i].pt.y-r;
+            pt2.x=vCurrentKeys[i].pt.x+r;
+            pt2.y=vCurrentKeys[i].pt.y+r;
             if(vbVO[i] || vbMap[i])
             {
-                cv::Point2f pt1,pt2;
-                pt1.x=vCurrentKeys[i].pt.x-r;
-                pt1.y=vCurrentKeys[i].pt.y-r;
-                pt2.x=vCurrentKeys[i].pt.x+r;
-                pt2.y=vCurrentKeys[i].pt.y+r;
-
                 // This is a match to a MapPoint in the map
                 if(vbMap[i])
                 {
@@ -134,6 +142,11 @@ cv::Mat FrameDrawer::DrawFrame()
                     cv::circle(im,vCurrentKeys[i].pt,2,cv::Scalar(255,0,0),-1);
                     mnTrackedVO++;
                 }
+            }
+            if(vbOutlier[i])
+            {
+                cv::rectangle(im,pt1,pt2,cv::Scalar(0,0,255));
+                cv::circle(im,vCurrentKeys[i].pt,2,cv::Scalar(0,0,255),-1);
             }
         }
     }
@@ -188,9 +201,14 @@ void FrameDrawer::Update(Tracking *pTracker)
     unique_lock<mutex> lock(mMutex);
     pTracker->mImGray.copyTo(mIm);
     mvCurrentKeys=pTracker->mCurrentFrame.mvKeys;
+
     N = mvCurrentKeys.size();
+    mvRefKeys=pTracker->mRefFrame.mvKeys;
+    mvMatchedPairs = pTracker->matchedPairs;
+
     mvbVO = vector<bool>(N,false);
     mvbMap = vector<bool>(N,false);
+    mvbOutlier = vector<bool>(N,false);
     mbOnlyTracking = pTracker->mbOnlyTracking;
 
     //ellipse information lligen added
@@ -217,6 +235,10 @@ void FrameDrawer::Update(Tracking *pTracker)
                         mvbMap[i]=true;
                     else
                         mvbVO[i]=true;
+                }
+                else
+                {
+                   mvbOutlier[i]=true;
                 }
             }
         }
