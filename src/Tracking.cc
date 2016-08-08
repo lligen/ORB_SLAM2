@@ -315,13 +315,21 @@ void Tracking::Track()
                 if(mVelocity.empty() || mCurrentFrame.mnId<mnLastRelocFrameId+2)
                 {
                     bOK = TrackReferenceKeyFrame();
+                    mvRefKeys = mpReferenceKF->mvKeys;
                 }
                 else
                 {
                     bOK = TrackWithMotionModel();
+                    mvRefKeys = mLastFrame.mvKeys;
                     if(!bOK)
+                      {
                         bOK = TrackReferenceKeyFrame();
+                        mvRefKeys = mpReferenceKF->mvKeys;
+                      }
                 }
+
+//                bOK = TrackReferenceKeyFrame();
+//                mvRefKeys = mpReferenceKF->mvKeys;
 
 
 //                bOK = TrackReferenceKeyFrameWithRansac();
@@ -426,7 +434,7 @@ void Tracking::Track()
             mState=LOST;
 
         // Update drawer
-        mRefFrame = mLastFrame;
+//        mRefFrame = mLastFrame;
         mpFrameDrawer->Update(this);
 
         // If tracking were good, check if we insert a keyframe
@@ -777,7 +785,7 @@ bool Tracking::TrackReferenceKeyFrameWithRansac()
     ORBmatcher matcher(0.75,true);
     vector<MapPoint*> vpMapPointMatches;
 
-    int nmatches = matcher.SearchByBoW(mpReferenceKF,mCurrentFrame,vpMapPointMatches);
+    int nmatches = matcher.SearchByBoW(mpReferenceKF,mCurrentFrame,vpMapPointMatches, matchedPairs);
     cout<<"SearchByBoW...git init matches="<<nmatches<<endl;
 
     bool bMatch = false;
@@ -922,7 +930,7 @@ bool Tracking::TrackReferenceKeyFrame()
     ORBmatcher matcher(0.7,true);
     vector<MapPoint*> vpMapPointMatches;
 
-    int nmatches = matcher.SearchByBoW(mpReferenceKF,mCurrentFrame,vpMapPointMatches);
+    int nmatches = matcher.SearchByBoW(mpReferenceKF,mCurrentFrame,vpMapPointMatches, matchedPairs);
 
     if(nmatches<15)
         return false;
@@ -1723,7 +1731,7 @@ bool Tracking::Relocalization()
             vbDiscarded[i] = true;
         else
         {
-            int nmatches = matcher.SearchByBoW(pKF,mCurrentFrame,vvpMapPointMatches[i]);
+            int nmatches = matcher.SearchByBoW(pKF,mCurrentFrame,vvpMapPointMatches[i], matchedPairs);
             if(nmatches<15)
             {
                 vbDiscarded[i] = true;

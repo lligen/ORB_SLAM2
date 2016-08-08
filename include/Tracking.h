@@ -94,7 +94,7 @@ public:
 
     // Current Frame
     Frame mCurrentFrame;
-    Frame mRefFrame;
+    vector<cv::KeyPoint> mvRefKeys;
     cv::Mat mImGray;
 
     //ellipse information lligen added

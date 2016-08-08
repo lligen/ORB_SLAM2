@@ -203,7 +203,7 @@ void FrameDrawer::Update(Tracking *pTracker)
     mvCurrentKeys=pTracker->mCurrentFrame.mvKeys;
 
     N = mvCurrentKeys.size();
-    mvRefKeys=pTracker->mRefFrame.mvKeys;
+    mvRefKeys=pTracker->mvRefKeys;
     mvMatchedPairs = pTracker->matchedPairs;
 
     mvbVO = vector<bool>(N,false);

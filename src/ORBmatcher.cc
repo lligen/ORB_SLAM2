@@ -156,7 +156,7 @@ bool ORBmatcher::CheckDistEpipolarLine(const cv::KeyPoint &kp1,const cv::KeyPoin
     return dsqr<3.84*pKF2->mvLevelSigma2[kp2.octave];
 }
 
-int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches)
+int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches, vector<cv::DMatch>& matchedPair)
 {
     const vector<MapPoint*> vpMapPointsKF = pKF->GetMapPointMatches();
 
@@ -176,6 +176,8 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
     DBoW2::FeatureVector::const_iterator Fit = F.mFeatVec.begin();
     DBoW2::FeatureVector::const_iterator KFend = vFeatVecKF.end();
     DBoW2::FeatureVector::const_iterator Fend = F.mFeatVec.end();
+
+    matchedPair.clear();
 
     while(KFit != KFend && Fit != Fend)
     {
@@ -233,6 +235,9 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
 
                         const cv::KeyPoint &kp = pKF->mvKeysUn[realIdxKF];
 
+                        cv::DMatch matched(realIdxKF, bestIdxF, 0.0f);
+                        matchedPair.push_back(matched);
+
                         if(mbCheckOrientation)
                         {
                             float rot = kp.angle-F.mvKeys[bestIdxF].angle;
@@ -280,6 +285,15 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
             {
                 vpMapPointMatches[rotHist[i][j]]=static_cast<MapPoint*>(NULL);
                 nmatches--;
+
+                std::vector<cv::DMatch>::iterator it=matchedPair.begin();
+                for(;it != matchedPair.end();it++)
+                {
+                    if(it->trainIdx==rotHist[i][j])
+                        it = matchedPair.erase(it);
+                    if( it == matchedPair.end())
+                        break;
+                }
             }
         }
     }
