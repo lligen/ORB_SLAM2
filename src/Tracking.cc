@@ -329,10 +329,11 @@ void Tracking::Track()
                 }
 
 //                bOK = TrackReferenceKeyFrame();
-//                mvRefKeys = mpReferenceKF->mvKeys;
+//                mvRefKeys = mpReferenceKF->mvKeys;make
 
 
 //                bOK = TrackReferenceKeyFrameWithRansac();
+//                mvRefKeys = mpReferenceKF->mvKeys;
             }
             else
             {
@@ -1249,7 +1250,7 @@ bool Tracking::TrackWithMotionModel()
                 MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
 
                 mCurrentFrame.mvpMapPoints[i]=static_cast<MapPoint*>(NULL);
-//                mCurrentFrame.mvbOutlier[i]=false;
+                mCurrentFrame.mvbOutlier[i]=false;
                 pMP->mbTrackInView = false;
                 pMP->mnLastFrameSeen = mCurrentFrame.mnId;
                 nmatches--;
