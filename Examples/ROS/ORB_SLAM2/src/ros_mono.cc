@@ -30,9 +30,10 @@
 #include<opencv2/core/core.hpp>
 
 #include"../../../include/System.h"
+#include <eigen_conversions/eigen_msg.h>
 
 #include "geometry_msgs/TransformStamped.h"
-//#include "geometry_msgs/PoseWithCovarianceStamped.h"
+#include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "tf/transform_datatypes.h"
 #include <tf/transform_broadcaster.h>
 
@@ -42,11 +43,15 @@ using namespace std;
 class ImageGrabber
 {
 public:
-    ImageGrabber(ORB_SLAM2::System* pSLAM):mpSLAM(pSLAM){}
+    ImageGrabber(ORB_SLAM2::System* pSLAM):mpSLAM(pSLAM){
+        ros::NodeHandle n;
+        transform_pub= n.advertise<geometry_msgs::TransformStamped>("vslam/transform", 1000);
+    }
 
     void GrabImage(const sensor_msgs::ImageConstPtr& msg);
 
     ORB_SLAM2::System* mpSLAM;
+    ros::Publisher transform_pub;
 };
 
 int main(int argc, char **argv)
@@ -127,12 +132,24 @@ void ImageGrabber::GrabImage(const sensor_msgs::ImageConstPtr& msg)
                                             0, 0, 1,
                                             1, 0, 0);
 
+    //first, we'll publish the transform over tf
     static tf::TransformBroadcaster br;
-
     tf::Matrix3x3 globalRotation_rh = cameraRotation_rh * rotation270degXZ;
     tf::Vector3 globalTranslation_rh = cameraTranslation_rh * rotation270degXZ;
     tf::Transform transform = tf::Transform(globalRotation_rh, globalTranslation_rh);
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "camera_link", "camera_pose"));
+    br.sendTransform(tf::StampedTransform(transform, ros::Time(cv_ptr->header.stamp.toSec(),cv_ptr->header.stamp.toNSec()), "camera_link", "camera_pose"));
+
+    //next, we'll publish the odometry message over
+    //geometry_msgs::PoseWithCovarianceStamped transform_msg;
+    geometry_msgs::Transform transform_msg;
+    geometry_msgs::TransformStamped transformstamped_msg;
+    tf::transformTFToMsg(transform,transform_msg);
+    transformstamped_msg.header.stamp =ros::Time(cv_ptr->header.stamp.toSec(),cv_ptr->header.stamp.toNSec());
+    transformstamped_msg.header.frame_id = "visual_odom";
+    transformstamped_msg.transform= transform_msg;
+    transformstamped_msg.child_frame_id = "map";
+    transform_pub.publish(transformstamped_msg);
+
 
 }
 
